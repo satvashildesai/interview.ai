@@ -1,9 +1,9 @@
-import { GoogleGenAI } from "@google/genai";
+import Groq from "groq-sdk";
 import { demoProblem } from "@/data/demoProblem";
 import { languages, SupportedLanguage } from "@/data/languages";
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || "",
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY || "",
 });
 
 function buildProblemContext(): string {
@@ -34,23 +34,35 @@ ${p.example.output}
 \`\`\`
 
 ### Constraints
-${p.constraints.map((c) => `- ${c}`).join("\n")}${
-    p.evaluation
-      ? `\n\n### What to Evaluate\n${p.evaluation.map((e) => `- ${e}`).join("\n")}`
-      : ""
-  }`;
+${p.constraints.map((c) => `- ${c}`).join("\n")}`;
 }
 
-const SYSTEM_PROMPT = `You are a coding assistant in a technical interview environment.
+const SYSTEM_PROMPT = `You are an AI coding interview assistant.
 
-Your role:
-- Help the candidate write code to solve the given problem.
-- When generating code, always wrap it in a fenced code block with the appropriate language tag.
-- Respond concisely. Focus on the solution and explain only what's necessary.
-- Do NOT execute code. Do NOT modify the editor directly. The candidate will apply your code themselves.
-- If the candidate provides an error message, help them debug it.
+The candidate is solving the following programming problem:
 
-${buildProblemContext()}`;
+${buildProblemContext()}
+
+Your instructions:
+- Help the candidate solve the problem.
+- Do NOT execute code.
+- Provide structured JSON output ONLY.
+- If the candidate asks to generate or fix code, return JSON with "type": "code", a "message" explaining, and the "code".
+- CRITICAL: When returning "code", you MUST return the COMPLETE, FULLY RUNNABLE file. Do NOT return just a function snippet. You must preserve and include all necessary imports, class definitions (e.g., \`class Main\` in Java), and boilerplate that are currently in the editor.
+- If the candidate asks for an explanation ONLY (no code generation needed), return JSON with "type": "explanation" and a "message".
+
+Example Code Response:
+{
+  "type": "code",
+  "message": "Here is the complete solution.",
+  "code": "import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        // Complete runnable code here\n    }\n}"
+}
+
+Example Explanation Response:
+{
+  "type": "explanation",
+  "message": "The issue is a division by zero."
+}`;
 
 export interface AiRequest {
   prompt: string;
@@ -59,43 +71,53 @@ export interface AiRequest {
   conversationHistory?: { role: "user" | "assistant"; content: string }[];
 }
 
-export async function generateAiResponse(req: AiRequest): Promise<string> {
+export async function generateAiResponse(req: AiRequest): Promise<any> {
   const langConfig = languages[req.language];
 
   let userMessage = req.prompt;
   userMessage += `\n\nSelected language: ${langConfig.label}`;
 
-  if (req.currentCode && req.currentCode.trim() !== langConfig.template.trim()) {
+  if (req.currentCode) {
     userMessage += `\n\nCurrent code in editor:\n\`\`\`${langConfig.monacoLanguage}\n${req.currentCode}\n\`\`\``;
   }
 
-  const contents: { role: "user" | "model"; parts: { text: string }[] }[] = [];
+  const messages: any[] = [
+    { role: "system", content: SYSTEM_PROMPT }
+  ];
 
-  // Add conversation history
   if (req.conversationHistory) {
     for (const msg of req.conversationHistory) {
-      contents.push({
-        role: msg.role === "user" ? "user" : "model",
-        parts: [{ text: msg.content }],
+      // Pass only text content to history so context is clean
+      messages.push({
+        role: msg.role === "user" ? "user" : "assistant",
+        content: msg.content,
       });
     }
   }
 
-  // Add current user message
-  contents.push({
+  messages.push({
     role: "user",
-    parts: [{ text: userMessage }],
+    content: userMessage,
   });
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents,
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
+  const model = process.env.GROQ_MODEL || "qwen/qwen3.8-27b";
+
+  try {
+    const completion = await groq.chat.completions.create({
+      messages,
+      model,
       temperature: 0.3,
-      maxOutputTokens: 4096,
-    },
-  });
+      max_tokens: 4096,
+      response_format: { type: "json_object" },
+    });
 
-  return response.text || "Sorry, I couldn't generate a response. Please try again.";
+    const responseContent = completion.choices[0]?.message?.content || "";
+    return JSON.parse(responseContent);
+  } catch (error) {
+    console.error("Groq generation error:", error);
+    return {
+      type: "explanation",
+      message: "Unable to connect to AI service. Please try again."
+    };
+  }
 }

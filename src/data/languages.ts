@@ -74,7 +74,7 @@ public class Main {
     id: "cpp",
     label: "C++",
     monacoLanguage: "cpp",
-    judge0Id: 54, // C++ (GCC)
+    judge0Id: 52, // C++ (GCC 7.4.0)
     template: `#include <iostream>
 #include <string>
 #include <sstream>

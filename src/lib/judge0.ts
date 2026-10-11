@@ -1,18 +1,18 @@
 import { languages, SupportedLanguage } from "@/data/languages";
 
 const JUDGE0_URL =
-  process.env.JUDGE0_URL || "https://judge0-ce.p.rapidapi.com";
-const JUDGE0_API_KEY = process.env.JUDGE0_API_KEY || "";
-const JUDGE0_HOST =
-  process.env.JUDGE0_HOST || "judge0-ce.p.rapidapi.com";
+  process.env.JUDGE0_URL || "http://localhost:2358";
 
 export interface Judge0Result {
-  status: string;
-  stdout: string;
-  stderr: string;
-  compile_output: string;
-  time: string;
-  memory: number;
+  stdout: string | null;
+  stderr: string | null;
+  compile_output: string | null;
+  status: {
+    id: number;
+    description: string;
+  };
+  time: string | null;
+  memory: number | null;
 }
 
 export async function executeCode(
@@ -25,66 +25,42 @@ export async function executeCode(
     throw new Error(`Unsupported language: ${language}`);
   }
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  // Only add RapidAPI headers if using RapidAPI-hosted Judge0
-  if (JUDGE0_API_KEY) {
-    headers["X-RapidAPI-Key"] = JUDGE0_API_KEY;
-    headers["X-RapidAPI-Host"] = JUDGE0_HOST;
-  }
-
-  // Submit the code
-  const submitRes = await fetch(
-    `${JUDGE0_URL}/submissions?base64_encoded=true&wait=true`,
+  const response = await fetch(
+    `${JUDGE0_URL}/submissions?wait=true&base64_encoded=true`,
     {
       method: "POST",
-      headers,
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         language_id: langConfig.judge0Id,
         source_code: Buffer.from(code).toString("base64"),
         stdin: Buffer.from(stdin).toString("base64"),
-        cpu_time_limit: 5,
-        memory_limit: 128000,
       }),
     }
   );
 
-  if (!submitRes.ok) {
-    const errorText = await submitRes.text();
-    throw new Error(`Judge0 submission failed: ${submitRes.status} ${errorText}`);
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Judge0 submission failed: ${response.status} ${errorText}`
+    );
   }
 
-  const result = await submitRes.json();
+  const result = await response.json();
 
-  const decode = (val: string | null) =>
-    val ? Buffer.from(val, "base64").toString("utf-8") : "";
-
-  // Map Judge0 status to a user-friendly string
-  const statusMap: Record<number, string> = {
-    1: "In Queue",
-    2: "Processing",
-    3: "Accepted",
-    4: "Wrong Answer",
-    5: "Time Limit Exceeded",
-    6: "Compilation Error",
-    7: "Runtime Error (SIGSEGV)",
-    8: "Runtime Error (SIGXFSZ)",
-    9: "Runtime Error (SIGFPE)",
-    10: "Runtime Error (SIGABRT)",
-    11: "Runtime Error (NZEC)",
-    12: "Runtime Error (Other)",
-    13: "Internal Error",
-    14: "Exec Format Error",
-  };
+  const decode = (val: string | null | undefined): string | null =>
+    val ? Buffer.from(val, "base64").toString("utf-8") : null;
 
   return {
-    status: statusMap[result.status?.id] || result.status?.description || "Unknown",
     stdout: decode(result.stdout),
     stderr: decode(result.stderr),
     compile_output: decode(result.compile_output),
-    time: result.time || "0",
-    memory: result.memory || 0,
+    status: {
+      id: result.status?.id ?? 0,
+      description: result.status?.description ?? "Unknown",
+    },
+    time: result.time ?? null,
+    memory: result.memory ?? null,
   };
 }

@@ -5,12 +5,15 @@ import { SupportedLanguage } from "@/data/languages";
 import { sampleInput } from "@/data/demoProblem";
 
 interface ExecutionResult {
-  status: string;
-  stdout: string;
-  stderr: string;
-  compile_output: string;
-  time: string;
-  memory: number;
+  stdout: string | null;
+  stderr: string | null;
+  compile_output: string | null;
+  status: {
+    id: number;
+    description: string;
+  };
+  time: string | null;
+  memory: number | null;
 }
 
 interface OutputPanelProps {
@@ -52,7 +55,8 @@ export default function OutputPanel({ language, code }: OutputPanelProps) {
     }
   };
 
-  const isSuccess = result?.status === "Accepted";
+  // Judge0 status id 3 = Accepted
+  const isSuccess = result?.status?.id === 3;
 
   return (
     <div className="flex h-full flex-col bg-[#0d1117] overflow-hidden">
@@ -127,12 +131,14 @@ export default function OutputPanel({ language, code }: OutputPanelProps) {
                     isSuccess ? "bg-emerald-400" : "bg-red-400"
                   }`}
                 />
-                {result.status}
+                {result.status.description}
               </span>
             )}
-            {result && (
+            {result && (result.time || result.memory) && (
               <span className="text-[10px] text-gray-600 ml-auto">
-                {result.time}s · {(result.memory / 1024).toFixed(1)} MB
+                {result.time ? `${result.time}s` : ""}
+                {result.time && result.memory ? " · " : ""}
+                {result.memory ? `${(result.memory / 1024).toFixed(1)} MB` : ""}
               </span>
             )}
           </div>

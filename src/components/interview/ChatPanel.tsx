@@ -6,6 +6,8 @@ import { SupportedLanguage } from "@/data/languages";
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  type?: "code" | "explanation";
+  code?: string;
 }
 
 interface ChatPanelProps {
@@ -40,16 +42,6 @@ export default function ChatPanel({
     }
   }, [input]);
 
-  const extractCodeBlocks = (text: string): string[] => {
-    const regex = /```(?:\w+)?\n([\s\S]*?)```/g;
-    const blocks: string[] = [];
-    let match;
-    while ((match = regex.exec(text)) !== null) {
-      blocks.push(match[1].trim());
-    }
-    return blocks;
-  };
-
   const handleSend = async () => {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
@@ -77,15 +69,20 @@ export default function ChatPanel({
       }
 
       const data = await res.json();
+      const payload = data.response;
+
       const assistantMsg: ChatMessage = {
         role: "assistant",
-        content: data.response,
+        content: payload.message || "Response received",
+        type: payload.type || "explanation",
+        code: payload.code || "",
       };
       setMessages([...updatedMessages, assistantMsg]);
     } catch (err) {
       const errorMsg: ChatMessage = {
         role: "assistant",
-        content: `⚠️ Error: ${err instanceof Error ? err.message : "Failed to get response"}. Please try again.`,
+        content: "Unable to connect to AI service. Please try again.",
+        type: "explanation",
       };
       setMessages([...updatedMessages, errorMsg]);
     } finally {
@@ -102,10 +99,6 @@ export default function ChatPanel({
 
   const renderMessage = (msg: ChatMessage, index: number) => {
     const isUser = msg.role === "user";
-    const codeBlocks = !isUser ? extractCodeBlocks(msg.content) : [];
-
-    // Split the message by code blocks to render text + code
-    const parts = msg.content.split(/```(?:\w+)?\n[\s\S]*?```/);
 
     return (
       <div
@@ -127,30 +120,24 @@ export default function ChatPanel({
                 : "bg-gray-800/70 text-gray-300 border border-gray-700/50"
             }`}
           >
-            {/* Render text parts interleaved with code blocks */}
-            {parts.map((part, i) => (
-              <div key={i}>
-                {part.trim() && (
-                  <div className="whitespace-pre-wrap">{part.trim()}</div>
-                )}
-                {codeBlocks[i] && (
-                  <div className="mt-3 mb-2">
-                    <pre className="rounded-lg bg-black/40 p-3 text-xs font-mono text-emerald-300 overflow-x-auto border border-gray-700/30">
-                      {codeBlocks[i]}
-                    </pre>
-                    <button
-                      onClick={() => onApplyCode(codeBlocks[i])}
-                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/15 px-3 py-1.5 text-xs font-medium text-emerald-400 border border-emerald-500/25 hover:bg-emerald-500/25 hover:border-emerald-500/40 transition-all duration-200 cursor-pointer"
-                    >
-                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                      </svg>
-                      Apply Code
-                    </button>
-                  </div>
-                )}
+            <div className="whitespace-pre-wrap">{msg.content}</div>
+
+            {!isUser && msg.type === "code" && msg.code && (
+              <div className="mt-3 mb-2">
+                <pre className="rounded-lg bg-black/40 p-3 text-xs font-mono text-emerald-300 overflow-x-auto border border-gray-700/30">
+                  {msg.code}
+                </pre>
+                <button
+                  onClick={() => onApplyCode(msg.code!)}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/15 px-3 py-1.5 text-xs font-medium text-emerald-400 border border-emerald-500/25 hover:bg-emerald-500/25 hover:border-emerald-500/40 transition-all duration-200 cursor-pointer"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                  Apply Code
+                </button>
               </div>
-            ))}
+            )}
           </div>
         </div>
         {isUser && (
